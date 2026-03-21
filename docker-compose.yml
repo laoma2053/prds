@@ -1,0 +1,33 @@
+# ============================================
+# PRDS Docker Compose - 全合一部署
+# 单容器包含: PostgreSQL + Redis + API + Worker
+# 通过外部网络连接已部署的 PanSou 和 AstrBot 服务
+# ============================================
+
+services:
+  prds:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: prds
+    ports:
+      - "8088:8000"      # 宿主机8088 → 容器内8000
+    env_file: .env
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data/postgresql:/var/lib/postgresql         # PostgreSQL 数据持久化
+      - ./data/redis:/data                             # Redis 数据持久化
+    networks:
+      - pansou-network     # 连接 PanSou 所在网络
+      - astrbot-network    # 连接 AstrBot 所在网络
+    restart: unless-stopped
+
+# 外部网络
+networks:
+  pansou-network:
+    external: true
+    name: panso_pansou-network
+  astrbot-network:
+    external: true
+    name: astrbot_astrbot_network

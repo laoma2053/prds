@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN" x-data="app()" x-init="init()">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRDS 管理后台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd',
+              400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8',
+              800: '#1e40af', 900: '#1e3a8a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .fade-in { animation: fadeIn .2s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+<!-- ============ 登录页 ============ -->
+<div x-show="!authed" x-cloak class="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-600 to-primary-800">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-8 fade-in">
+    <div class="flex items-center justify-center gap-3 mb-6">
+      <div class="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center text-white font-bold">P</div>
+      <span class="text-xl font-bold text-slate-800">PRDS 管理后台</span>
+    </div>
+    <div class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">管理密码</label>
+        <input x-model="loginPassword" type="password" placeholder="请输入管理密码"
+          @keydown.enter="doLogin()"
+          class="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+      </div>
+      <div x-show="loginError" class="text-sm text-red-600 font-medium" x-text="loginError"></div>
+      <button @click="doLogin()" class="w-full bg-primary-600 hover:bg-primary-700 text-white py-2.5 rounded-lg font-medium transition-colors shadow-sm">
+        登录
+      </button>
+    </div>
+    <p class="text-center text-xs text-slate-400 mt-4">密码在 .env 文件的 ADMIN_PASSWORD 中设置</p>
+  </div>
+</div>
+
+<!-- ============ 主界面（登录后显示） ============ -->
+<div x-show="authed" x-cloak>
+
+<!-- 顶部导航 -->
+<header class="bg-primary-600 text-white shadow-lg sticky top-0 z-50">
+  <div class="max-w-screen-xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center font-bold text-sm">P</div>
+      <span class="text-lg font-semibold tracking-wide">PRDS 管理后台</span>
+      <span class="text-xs bg-white/20 px-2 py-0.5 rounded-full ml-2">v0.1.0</span>
+    </div>
+    <div class="text-sm text-primary-100">
+      网盘资源交付中台
+      <button @click="logout()" class="ml-4 text-xs bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded transition-colors">退出</button>
+    </div>
+  </div>
+</header>
+
+<div class="max-w-screen-xl mx-auto flex">
+
+  <!-- 侧边栏 -->
+  <aside class="w-56 min-h-[calc(100vh-3.5rem)] bg-white border-r border-slate-200 py-4 px-3 shrink-0">
+    <nav class="space-y-1">
+      <template x-for="item in nav" :key="item.id">
+        <button
+          @click="page = item.id; loadPage()"
+          :class="page === item.id
+            ? 'bg-primary-50 text-primary-700 border-primary-200'
+            : 'text-slate-600 hover:bg-slate-50 border-transparent'"
+          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium border transition-colors"
+        >
+          <span x-text="item.icon" class="text-base"></span>
+          <span x-text="item.label"></span>
+        </button>
+      </template>
+    </nav>
+  </aside>
+
+  <!-- 主内容 -->
+  <main class="flex-1 p-6 min-h-[calc(100vh-3.5rem)]">
+
+    <!-- ============ 数据概览 ============ -->
+    <div x-show="page === 'dashboard'" x-cloak class="fade-in">
+      <h2 class="text-xl font-semibold mb-5 text-slate-800">数据概览</h2>
+
+      <!-- 统计卡片 -->
+      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        <template x-for="card in statsCards" :key="card.label">
+          <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-2xl" x-text="card.icon"></span>
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full"
+                :class="card.color" x-text="card.tag"></span>
+            </div>
+            <div class="text-2xl font-bold text-slate-800" x-text="card.value"></div>
+            <div class="text-sm text-slate-500 mt-1" x-text="card.label"></div>
+          </div>
+        </template>
+      </div>
+
+      <!-- 请求成功率 -->
+      <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+        <h3 class="text-sm font-semibold text-slate-600 mb-3">请求成功率</h3>
+        <div class="flex items-center gap-4">
+          <div class="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+            <div class="bg-primary-500 h-full rounded-full transition-all duration-500"
+              :style="`width: ${stats.requests?.total ? Math.round(stats.requests.success / stats.requests.total * 100) : 0}%`"></div>
+          </div>
+          <span class="text-sm font-semibold text-primary-600"
+            x-text="`${stats.requests?.total ? Math.round(stats.requests.success / stats.requests.total * 100) : 0}%`"></span>
+        </div>
+        <div class="flex gap-6 mt-3 text-xs text-slate-500">
+          <span>成功 <strong class="text-emerald-600" x-text="stats.requests?.success || 0"></strong></span>
+          <span>失败 <strong class="text-red-500" x-text="stats.requests?.failed || 0"></strong></span>
+          <span>总计 <strong class="text-slate-700" x-text="stats.requests?.total || 0"></strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 账号管理 ============ -->
+    <div x-show="page === 'accounts'" x-cloak class="fade-in">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-xl font-semibold text-slate-800">账号管理</h2>
+        <button @click="openAccountModal()" class="bg-primary-600 hover:bg-primary-700 text-white text-sm px-4 py-2 rounded-lg font-medium transition-colors shadow-sm">
+          + 新增账号
+        </button>
+      </div>
+
+      <!-- 账号列表 -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="text-left px-4 py-3 text-slate-600 font-semibold">名称</th>
+              <th class="text-left px-4 py-3 text-slate-600 font-semibold">类型</th>
+              <th class="text-center px-4 py-3 text-slate-600 font-semibold">状态</th>
+              <th class="text-center px-4 py-3 text-slate-600 font-semibold">Cookie</th>
+              <th class="text-left px-4 py-3 text-slate-600 font-semibold">健康度</th>
+              <th class="text-center px-4 py-3 text-slate-600 font-semibold">并发</th>
+              <th class="text-center px-4 py-3 text-slate-600 font-semibold">权重</th>
+              <th class="text-center px-4 py-3 text-slate-600 font-semibold">操作</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <template x-for="acc in accounts" :key="acc.id">
+              <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-4 py-3 font-medium" x-text="acc.name"></td>
+                <td class="px-4 py-3">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-primary-50 text-primary-700" x-text="acc.pan_type"></span>
+                </td>
+                <td class="px-4 py-3 text-center">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="acc.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+                    x-text="acc.is_active ? '启用' : '停用'"></span>
+                </td>
+                <td class="px-4 py-3 text-center">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="acc.cookie_valid ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'"
+                    x-text="acc.cookie_valid ? '有效' : '失效'"></span>
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden max-w-[80px]">
+                      <div class="h-full rounded-full transition-all"
+                        :class="acc.health_score >= 80 ? 'bg-emerald-500' : acc.health_score >= 50 ? 'bg-amber-400' : 'bg-red-500'"
+                        :style="`width: ${acc.health_score}%`"></div>
+                    </div>
+                    <span class="text-xs text-slate-500" x-text="acc.health_score"></span>
+                  </div>
+                </td>
+                <td class="px-4 py-3 text-center text-slate-600" x-text="acc.max_concurrency"></td>
+                <td class="px-4 py-3 text-center text-slate-600" x-text="acc.weight"></td>
+                <td class="px-4 py-3 text-center">
+                  <div class="flex items-center justify-center gap-1">
+                    <button @click="openAccountModal(acc)" class="text-primary-600 hover:text-primary-800 p-1 rounded hover:bg-primary-50" title="编辑">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                    </button>
+                    <button @click="deleteAccount(acc)" class="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50" title="删除">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="accounts.length === 0">
+              <td colspan="8" class="px-4 py-8 text-center text-slate-400">暂无账号，点击右上角「新增账号」添加</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ 请求日志 ============ -->
+    <div x-show="page === 'logs'" x-cloak class="fade-in">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-xl font-semibold text-slate-800">请求日志</h2>
+        <button @click="loadLogs()" class="text-primary-600 hover:text-primary-700 text-sm font-medium flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+          刷新
+        </button>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="text-left px-4 py-3 text-slate-600 font-semibold">时间</th>
+              <th class="text-left px-4 py-3 text-slate-600 font-semibold">客户端</th>
+              <th class="text-left px-4 py-3 text-slate-600 font-semibold">关键词</th>
+              <th class="text-center px-4 py-3 text-slate-600 font-semibold">网盘类型</th>
+              <th class="text-center px-4 py-3 text-slate-600 font-semibold">状态</th>
+              <th class="text-right px-4 py-3 text-slate-600 font-semibold">耗时</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <template x-for="log in logs" :key="log.id">
+              <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-4 py-3 text-slate-500 text-xs" x-text="formatTime(log.created_at)"></td>
+                <td class="px-4 py-3" x-text="log.client_id"></td>
+                <td class="px-4 py-3 font-medium max-w-[200px] truncate" x-text="log.keyword"></td>
+                <td class="px-4 py-3 text-center">
+                  <span x-show="log.pan_type" class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-primary-50 text-primary-700" x-text="log.pan_type"></span>
+                  <span x-show="!log.pan_type" class="text-slate-400 text-xs">-</span>
+                </td>
+                <td class="px-4 py-3 text-center">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="log.status === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'"
+                    x-text="log.status === 'success' ? '成功' : '失败'"></span>
+                </td>
+                <td class="px-4 py-3 text-right text-slate-500" x-text="`${log.duration_ms}ms`"></td>
+              </tr>
+            </template>
+            <tr x-show="logs.length === 0">
+              <td colspan="6" class="px-4 py-8 text-center text-slate-400">暂无请求日志</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+</div><!-- /authed -->
+
+<!-- ============ 账号编辑弹窗 ============ -->
+<div x-show="showModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center"
+  @keydown.escape.window="showModal = false">
+  <!-- 遮罩 -->
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showModal = false"></div>
+  <!-- 弹窗 -->
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 fade-in">
+    <h3 class="text-lg font-semibold mb-5 text-slate-800" x-text="editingAccount ? '编辑账号' : '新增账号'"></h3>
+
+    <div class="space-y-4">
+      <!-- 名称 -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">账号名称</label>
+        <input x-model="form.name" type="text" placeholder="例如: 夸克主账号"
+          class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+      </div>
+      <!-- 类型 -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">网盘类型</label>
+        <select x-model="form.pan_type"
+          class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white">
+          <option value="quark">夸克网盘</option>
+          <option value="baidu">百度网盘</option>
+          <option value="aliyun">阿里云盘</option>
+        </select>
+      </div>
+      <!-- Cookie -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Cookie</label>
+        <textarea x-model="form.cookie" rows="3" placeholder="从浏览器开发者工具中复制"
+          class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"></textarea>
+      </div>
+      <!-- 并发 + 权重 -->
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">最大并发</label>
+          <input x-model.number="form.max_concurrency" type="number" min="1" max="20"
+            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">调度权重</label>
+          <input x-model.number="form.weight" type="number" min="1" max="100"
+            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+        </div>
+      </div>
+      <!-- 转存文件夹 -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">转存文件夹ID</label>
+        <input x-model="form.save_folder_id" type="text" placeholder="0 表示根目录"
+          class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+      </div>
+      <!-- 启用 -->
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input x-model="form.is_active" type="checkbox" class="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500">
+        <span class="text-sm text-slate-700">启用该账号</span>
+      </label>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
+      <button @click="showModal = false" class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors">取消</button>
+      <button @click="saveAccount()" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-sm transition-colors">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Toast 提示 ============ -->
+<div x-show="toast.show" x-cloak
+  x-transition:enter="transition ease-out duration-200"
+  x-transition:enter-start="opacity-0 translate-y-2"
+  x-transition:enter-end="opacity-100 translate-y-0"
+  x-transition:leave="transition ease-in duration-150"
+  x-transition:leave-start="opacity-100"
+  x-transition:leave-end="opacity-0"
+  class="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium"
+  :class="toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'"
+  x-text="toast.msg">
+</div>
+
+<script>
+const API = '/api/v1';
+
+function app() {
+  return {
+    // 鉴权
+    authed: false,
+    token: '',
+    loginPassword: '',
+    loginError: '',
+
+    page: 'dashboard',
+    nav: [
+      { id: 'dashboard', label: '数据概览', icon: '📊' },
+      { id: 'accounts',  label: '账号管理', icon: '👤' },
+      { id: 'logs',      label: '请求日志', icon: '📋' },
+    ],
+
+    // 数据
+    stats: {},
+    statsCards: [],
+    accounts: [],
+    logs: [],
+
+    // 弹窗
+    showModal: false,
+    editingAccount: null,
+    form: {},
+
+    // Toast
+    toast: { show: false, msg: '', type: 'success' },
+
+    async init() {
+      // 从 localStorage 恢复登录状态
+      const saved = localStorage.getItem('prds_admin_token');
+      if (saved) {
+        this.token = saved;
+        this.authed = true;
+        await this.loadPage();
+      }
+    },
+
+    // ── 登录/登出 ──
+    async doLogin() {
+      this.loginError = '';
+      try {
+        const res = await fetch(`${API}/admin/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: this.loginPassword }),
+        });
+        const json = await res.json();
+        if (json.success) {
+          this.token = json.data.token;
+          localStorage.setItem('prds_admin_token', this.token);
+          this.authed = true;
+          this.loginPassword = '';
+          await this.loadPage();
+        } else {
+          this.loginError = json.message || '密码错误';
+        }
+      } catch (e) {
+        this.loginError = '连接服务失败';
+      }
+    },
+
+    logout() {
+      this.token = '';
+      this.authed = false;
+      localStorage.removeItem('prds_admin_token');
+    },
+
+    // 带鉴权的 fetch
+    async authFetch(url, opts = {}) {
+      opts.headers = { ...opts.headers, 'X-Admin-Token': this.token };
+      const res = await fetch(url, opts);
+      if (res.status === 401) {
+        this.logout();
+        this.showToast('登录已过期，请重新登录', 'error');
+        throw new Error('unauthorized');
+      }
+      return res;
+    },
+
+    async loadPage() {
+      if (this.page === 'dashboard') await this.loadStats();
+      if (this.page === 'accounts') await this.loadAccounts();
+      if (this.page === 'logs') await this.loadLogs();
+    },
+
+    // ── 数据概览 ──
+    async loadStats() {
+      try {
+        const res = await this.authFetch(`${API}/admin/stats`);
+        const json = await res.json();
+        if (json.success) {
+          this.stats = json.data;
+          this.statsCards = [
+            { label: '搜索总次数', value: this.stats.requests?.total || 0, icon: '🔍', tag: '请求', color: 'bg-primary-50 text-primary-600' },
+            { label: '资源总数', value: this.stats.assets?.total || 0, icon: '📦', tag: '资源', color: 'bg-indigo-50 text-indigo-600' },
+            { label: '转存成功', value: this.stats.instances?.save_success || 0, icon: '💾', tag: '转存', color: 'bg-emerald-50 text-emerald-600' },
+            { label: '分享成功', value: this.stats.instances?.share_success || 0, icon: '🔗', tag: '分享', color: 'bg-cyan-50 text-cyan-600' },
+            { label: '删除完成', value: this.stats.deletes?.completed || 0, icon: '🗑️', tag: '删除', color: 'bg-amber-50 text-amber-600' },
+            { label: '活跃账号', value: this.stats.accounts?.active || 0, icon: '👤', tag: '账号', color: 'bg-violet-50 text-violet-600' },
+          ];
+        }
+      } catch (e) {
+        this.showToast('加载统计数据失败', 'error');
+      }
+    },
+
+    // ── 账号管理 ──
+    async loadAccounts() {
+      try {
+        const res = await this.authFetch(`${API}/admin/accounts`);
+        const json = await res.json();
+        if (json.success) this.accounts = json.data;
+      } catch (e) {
+        this.showToast('加载账号列表失败', 'error');
+      }
+    },
+
+    openAccountModal(acc = null) {
+      this.editingAccount = acc;
+      this.form = acc ? {
+        name: acc.name,
+        pan_type: acc.pan_type,
+        cookie: '', // 编辑时不回显 cookie
+        max_concurrency: acc.max_concurrency,
+        weight: acc.weight,
+        save_folder_id: '',
+        is_active: acc.is_active,
+      } : {
+        name: '',
+        pan_type: 'quark',
+        cookie: '',
+        max_concurrency: 3,
+        weight: 1,
+        save_folder_id: '0',
+        is_active: true,
+      };
+      this.showModal = true;
+    },
+
+    async saveAccount() {
+      const body = { ...this.form };
+      // 编辑时如果 cookie 为空则不提交
+      if (this.editingAccount && !body.cookie) delete body.cookie;
+
+      try {
+        let res;
+        if (this.editingAccount) {
+          res = await this.authFetch(`${API}/admin/accounts/${this.editingAccount.id}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+          });
+        } else {
+          if (!body.name || !body.cookie) {
+            this.showToast('名称和 Cookie 不能为空', 'error');
+            return;
+          }
+          res = await this.authFetch(`${API}/admin/accounts`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+          });
+        }
+        const json = await res.json();
+        if (json.success) {
+          this.showToast(this.editingAccount ? '账号更新成功' : '账号创建成功', 'success');
+          this.showModal = false;
+          await this.loadAccounts();
+        } else {
+          this.showToast(json.message, 'error');
+        }
+      } catch (e) {
+        this.showToast('操作失败', 'error');
+      }
+    },
+
+    async deleteAccount(acc) {
+      if (!confirm(`确定要删除账号「${acc.name}」吗？`)) return;
+      try {
+        const res = await this.authFetch(`${API}/admin/accounts/${acc.id}`, { method: 'DELETE' });
+        const json = await res.json();
+        if (json.success) {
+          this.showToast('账号已删除', 'success');
+          await this.loadAccounts();
+        } else {
+          this.showToast(json.message, 'error');
+        }
+      } catch (e) {
+        this.showToast('删除失败', 'error');
+      }
+    },
+
+    // ── 请求日志 ──
+    async loadLogs() {
+      try {
+        const res = await this.authFetch(`${API}/admin/stats/recent?limit=100`);
+        const json = await res.json();
+        if (json.success) this.logs = json.data;
+      } catch (e) {
+        this.showToast('加载日志失败', 'error');
+      }
+    },
+
+    // ── 工具方法 ──
+    formatTime(iso) {
+      if (!iso) return '-';
+      const d = new Date(iso);
+      return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    },
+
+    showToast(msg, type = 'success') {
+      this.toast = { show: true, msg, type };
+      setTimeout(() => { this.toast.show = false; }, 2500);
+    },
+  };
+}
+</script>
+
+</body>
+</html>
