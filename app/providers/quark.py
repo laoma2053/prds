@@ -109,6 +109,27 @@ class QuarkProvider(BaseProvider):
 
     pan_type = "quark"
 
+    async def _resolve_short_url(self, url: str) -> str:
+        """解析短链接，获取真实夸克网盘 URL
+
+        处理 pan.qoark.cn 等短链接服务，通过 HEAD 请求获取重定向后的真实地址。
+        """
+        if "pan.quark.cn" in url:
+            return url  # 已经是标准夸克链接
+
+        try:
+            async with httpx.AsyncClient(follow_redirects=False, timeout=5.0) as client:
+                resp = await client.head(url, headers={"User-Agent": "Mozilla/5.0"})
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    redirect_url = resp.headers.get("location", "")
+                    if redirect_url and "pan.quark.cn" in redirect_url:
+                        logger.info(f"🔗 短链接解析成功: {url} -> {redirect_url}")
+                        return redirect_url
+        except Exception as e:
+            logger.warning(f"⚠️ 短链接解析失败: {url}, {e}")
+
+        return url  # 解析失败返回原链接
+
     async def check_cookie(self, cookie: str) -> bool:
         headers = _build_headers(cookie)
         try:
@@ -123,6 +144,9 @@ class QuarkProvider(BaseProvider):
 
     async def save_share(self, share_url: str, cookie: str, save_folder_id: str = "0") -> SaveResult:
         """转存分享资源（7步流程，对齐 kuakeso 实现）"""
+        # 解析短链接（如 pan.qoark.cn）
+        share_url = await self._resolve_short_url(share_url)
+
         headers = _build_headers(cookie)
 
         try:

@@ -298,7 +298,7 @@ class VideoSearchPlugin(Star):
 
         # 标题
         lines.append("")
-        lines.append(f"🔍 {keyword} 丨{pan_display} 的资源")
+        lines.append(f"🔍 {keyword} 丨[{pan_display}] 资源")
         lines.append("━━━━━━━━━━━━━━━")
         lines.append("")
 
