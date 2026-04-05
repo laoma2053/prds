@@ -42,6 +42,16 @@ class ResourceInstanceRepository:
         stmt = update(ResourceInstance).where(ResourceInstance.id == instance_id).values(status=status, **extra)
         await self._db.execute(stmt)
 
+    async def get_resource_key_by_instance(self, instance_id: int) -> str | None:
+        """通过 instance_id 反查关联 asset 的 resource_key"""
+        stmt = (
+            select(ResourceAsset.resource_key)
+            .join(ResourceInstance, ResourceInstance.asset_id == ResourceAsset.id)
+            .where(ResourceInstance.id == instance_id)
+        )
+        result = await self._db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_valid_instance(self, asset_id: int) -> ResourceInstance | None:
         """获取资源的一个可用实例（已分享且未过期）"""
         now = datetime.now()

@@ -19,6 +19,8 @@ from app.providers import get_provider
 
 logger = logging.getLogger(__name__)
 
+_RESOURCE_CACHE_KEY = "prds:cache:resource:{resource_key}"
+
 
 async def run_delete_worker(interval: int = 30):
     """删除 Worker 主循环
@@ -87,6 +89,11 @@ async def _execute_delete(db: AsyncSession, task, repo, account_repo, instance_r
             now = datetime.now(timezone.utc)
             await repo.update_status(task.id, "completed", executed_at=now)
             await instance_repo.update_status(instance.id, "deleted")
+            # 清除 L3 资源缓存，防止返回已失效的分享链接
+            resource_key = await instance_repo.get_resource_key_by_instance(instance.id)
+            if resource_key:
+                cache_key = _RESOURCE_CACHE_KEY.format(resource_key=resource_key)
+                await redis_client.delete(cache_key)
             logger.info(f"🗑️ 删除成功: instance={instance.id}, file={instance.saved_file_id}")
         else:
             await repo.update_status(task.id, "failed", error_message=result.error)
