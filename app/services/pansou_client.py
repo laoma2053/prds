@@ -31,8 +31,10 @@ class PanSouClient:
         """搜索资源"""
         params: dict[str, Any] = {
             "kw": keyword,
-            "res": "all",
+            "res": "merge",
         }
+        if pan_type:
+            params["cloud_types"] = pan_type
         if refresh:
             params["refresh"] = True
 
@@ -61,10 +63,6 @@ class PanSouClient:
             data = raw
 
         response = PanSouSearchResponse.from_raw(data)
-
-        if pan_type:
-            response.filter_by_type(pan_type)
-
         return response
 
     async def health(self) -> bool:
@@ -136,10 +134,12 @@ class PanSouSearchResponse:
 
     @classmethod
     def from_raw(cls, data: dict) -> PanSouSearchResponse:
-        results = [PanSouResult.from_raw(r) for r in data.get("results", [])]
+        results = [PanSouResult.from_raw(r) for r in (data.get("results") or [])]
 
         merged: dict[str, list[PanSouLink]] = {}
-        for ptype, items in data.get("merged_by_type", {}).items():
+        for ptype, items in (data.get("merged_by_type") or {}).items():
+            if not items:
+                continue
             merged[ptype] = [
                 PanSouLink(
                     pan_type=ptype,
