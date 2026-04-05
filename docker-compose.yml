@@ -2,6 +2,7 @@
 # PRDS Docker Compose - 全合一部署
 # 单容器包含: PostgreSQL + Redis + API + Worker
 # 通过外部网络连接已部署的 PanSou 和 AstrBot 服务
+# 构建镜像并启动（后台运行）  docker compose up -d --build
 # ============================================
 
 services:

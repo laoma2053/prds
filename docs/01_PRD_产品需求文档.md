@@ -96,3 +96,4 @@
 2. **quark-auto-save**: https://github.com/Cp0204/quark-auto-save
 3. **quark-save**: https://github.com/henggedaren/quark-save
 4. **pansou**: https://github.com/fish2018/pansou
+5. **xinyue-search**: https://github.com/675061370/xinyue-search
