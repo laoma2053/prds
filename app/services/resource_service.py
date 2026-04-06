@@ -7,9 +7,12 @@
 
 业务流程:
   1. 检查 L1 搜索缓存 → 命中则秒回
-  2. 调用 PanSou 搜索 → 按时间降序排列 → 取前 limit 条
-  3. 对每个链接: 检查 L3 资源缓存 → 命中则直接返回
-  4. 未命中: 获取 L2 分布式锁 → 转存 → 分享 → 写入 L3 缓存
+  2. 调用 PanSou 搜索 → 按时间降序排列 → 取全部候选链接
+  3. 智能补偿机制：依次尝试转存，直到凑够 N 条可用资源或链接耗尽
+     - 对每个链接: 检查 L3 资源缓存 → 命中则直接返回
+     - 未命中: 获取 L2 分布式锁 → 转存 → 分享 → 写入 L3 缓存
+     - 转存失败: 跳过此链接，继续尝试下一条
+  4. 如果全部失效: 降级返回原始链接（带警告标记）
 """
 
 import asyncio
@@ -107,17 +110,18 @@ class ResourceService:
             # 处理搜索结果
             results = []
             for ptype in search_resp.available_types:
-                # 按时间降序排列，取最新的前 limit 条
-                links = search_resp.get_links_by_type(ptype, limit=effective_limit)
+                # 取所有链接（按时间降序），让 _deliver_links 智能补偿
+                all_links = search_resp.get_links_by_type(ptype, limit=None)
                 has_account = await self._account_repo.has_accounts_for_type(ptype)
 
                 if has_account:
-                    logger.info(f"📦 [{ptype}] 检测到有效账号，进入转存模式 (最新{len(links)}条)")
-                    delivered = await self._deliver_links(keyword, ptype, links)
+                    logger.info(f"📦 [{ptype}] 检测到有效账号，进入智能转存模式 (目标{effective_limit}条，候选{len(all_links)}条)")
+                    delivered = await self._deliver_links(keyword, ptype, all_links, effective_limit)
                     results.extend(delivered)
                 else:
-                    logger.info(f"📎 [{ptype}] 未配置账号，返回原始链接 (最新{len(links)}条)")
-                    for link in links:
+                    logger.info(f"📎 [{ptype}] 未配置账号，返回原始链接 (最新{effective_limit}条)")
+                    # 无账号时，直接返回前 N 条原始链接
+                    for link in all_links[:effective_limit]:
                         results.append({
                             "title": link.note or keyword, "pan_type": ptype,
                             "url": link.url, "password": link.password, "mode": "direct",
@@ -149,18 +153,73 @@ class ResourceService:
 
     # ── 转存流程 ──────────────────────────────────────
 
-    async def _deliver_links(self, keyword: str, pan_type: str, links: list) -> list[dict]:
+    async def _deliver_links(self, keyword: str, pan_type: str, all_links: list, target_count: int) -> list[dict]:
+        """智能转存：尽力凑够 target_count 条可用资源
+
+        策略：
+        1. 依次尝试转存 all_links（按时间降序）
+        2. 转存成功的（mode="proxy"）加入结果集
+        3. 转存失败的跳过（不返回原始链接）
+        4. 直到凑够 target_count 条或链接耗尽
+        5. 如果全部失效，降级返回前 target_count 条原始链接（带警告）
+        """
         provider = get_provider(pan_type)
         if not provider:
-            return [{"title": lnk.note, "pan_type": pan_type, "url": lnk.url, "password": lnk.password, "mode": "direct"} for lnk in links]
+            # 无 Provider，返回前 target_count 条原始链接
+            return [
+                {"title": lnk.note or keyword, "pan_type": pan_type,
+                 "url": lnk.url, "password": lnk.password, "mode": "direct"}
+                for lnk in all_links[:target_count]
+            ]
 
         results = []
-        for link in links:
-            result = await self._deliver_single(keyword, pan_type, link, provider)
-            results.append(result)
-        return results
+        failed_count = 0
 
-    async def _deliver_single(self, keyword: str, pan_type: str, link, provider) -> dict:
+        for idx, link in enumerate(all_links, 1):
+            result = await self._deliver_single(keyword, pan_type, link, provider)
+
+            # 只保留转存成功的（mode="proxy"）
+            if result is not None and result.get("mode") == "proxy":
+                results.append(result)
+                logger.info(f"✅ 转存成功 ({len(results)}/{target_count}): {result['title']}")
+
+                # 凑够目标数量，提前返回
+                if len(results) >= target_count:
+                    logger.info(f"🎯 已凑够 {target_count} 条可用资源（尝试了 {idx}/{len(all_links)} 条）")
+                    return results
+            else:
+                failed_count += 1
+                logger.warning(f"⏭️ 跳过失效链接 ({failed_count}): {link.url[:50]}...")
+
+        # 链接耗尽，检查结果
+        if len(results) >= target_count:
+            logger.info(f"🎯 凑够 {target_count} 条可用资源（尝试了全部 {len(all_links)} 条）")
+            return results
+        elif len(results) > 0:
+            logger.warning(
+                f"⚠️ 仅凑够 {len(results)}/{target_count} 条可用资源，"
+                f"其余 {failed_count} 条链接均失效或转存失败"
+            )
+            return results
+        else:
+            # 全部失效，降级返回原始链接（带警告标记）
+            logger.error(
+                f"❌ 所有 {len(all_links)} 条链接转存均失败，降级返回前 {target_count} 条原始链接"
+            )
+            return [
+                {
+                    "title": f"⚠️ {lnk.note or keyword}",
+                    "pan_type": pan_type,
+                    "url": lnk.url,
+                    "password": lnk.password,
+                    "mode": "direct",
+                    "warning": "原始链接可能已失效，转存失败"
+                }
+                for lnk in all_links[:target_count]
+            ]
+
+    async def _deliver_single(self, keyword: str, pan_type: str, link, provider) -> dict | None:
+        """转存单个链接，返回结果或 None（失败时）"""
         resource_key = _make_resource_key(keyword, link.url)
 
         # L3: Redis 资源缓存（毫秒级）
@@ -198,33 +257,35 @@ class ResourceService:
         finally:
             await self._redis.delete(lock_key)
 
-    async def _wait_for_resource(self, resource_key: str, pan_type: str, keyword: str, link) -> dict:
-        """等待其他请求的转存结果（最多30秒）"""
+    async def _wait_for_resource(self, resource_key: str, pan_type: str, keyword: str, link) -> dict | None:
+        """等待其他请求的转存结果（最多30秒），失败返回 None"""
         for _ in range(30):
             await asyncio.sleep(1)
             cached = await self._get_resource_cache(resource_key)
             if cached is not None:
                 logger.info(f"⚡ 等待后缓存命中: {resource_key[:8]}")
                 return cached
-        logger.warning(f"⏰ 等待转存超时，降级返回原始链接: {resource_key[:8]}")
-        return {"title": link.note or keyword, "pan_type": pan_type, "url": link.url, "password": link.password, "mode": "direct"}
+        logger.warning(f"⏰ 等待转存超时，跳过此链接: {resource_key[:8]}")
+        return None  # 超时返回 None，让智能补偿机制尝试下一条
 
-    async def _do_transfer(self, keyword, pan_type, link, provider, resource_key, existing_asset) -> dict:
-        """执行实际的转存+分享流程"""
+    async def _do_transfer(self, keyword, pan_type, link, provider, resource_key, existing_asset) -> dict | None:
+        """执行实际的转存+分享流程，失败返回 None"""
         candidates = await self._account_repo.get_active_by_type(pan_type)
         account = await self._scheduler.select_account(candidates)
         if not account:
-            return {"title": link.note or keyword, "pan_type": pan_type, "url": link.url, "password": link.password, "mode": "direct"}
+            logger.warning(f"❌ 无可用账号")
+            return None
 
         acquired = await self._scheduler.acquire(account)
         if not acquired:
-            return {"title": link.note or keyword, "pan_type": pan_type, "url": link.url, "password": link.password, "mode": "direct"}
+            logger.warning(f"❌ 账号并发已满")
+            return None
 
         try:
             save_result = await provider.save_share(link.url, account.cookie, account.save_folder_id)
             if not save_result.success:
                 logger.warning(f"❌ 转存失败: {save_result.error}")
-                return {"title": link.note or keyword, "pan_type": pan_type, "url": link.url, "password": link.password, "mode": "direct"}
+                return None  # 转存失败，返回 None
 
             logger.info(f"💾 转存成功: {save_result.file_name} -> {save_result.file_id}")
 
@@ -232,7 +293,7 @@ class ResourceService:
             if not share_result.success:
                 logger.warning(f"❌ 分享失败: {share_result.error}")
                 await self._register_delete(save_result.file_id, account.id)
-                return {"title": link.note or keyword, "pan_type": pan_type, "url": link.url, "password": link.password, "mode": "direct"}
+                return None  # 分享失败，返回 None
 
             now = datetime.now(timezone.utc)
             ttl = self._settings.resource_ttl_minutes
