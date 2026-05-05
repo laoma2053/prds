@@ -5,6 +5,10 @@
 
 FROM python:3.11-slim
 
+# --- 新增：将容器内的源替换为阿里云镜像 ---
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources || \
+    sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list
+    
 # 安装 PostgreSQL + Redis + 系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql \
