@@ -1,4 +1,6 @@
 #!/bin/bash
+#使用方式：chmod +x deploy.sh && ./deploy.sh
+
 set -e
 
 # ── 1. 检查 Docker 环境 ──────────────────────────────────────────
