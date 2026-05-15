@@ -28,7 +28,7 @@ services:
 networks:
   pansou-network:
     external: true
-    name: panso_pansou-network
+    name: pansou_pansou-network
   astrbot-network:
     external: true
     name: astrbot_astrbot_network
