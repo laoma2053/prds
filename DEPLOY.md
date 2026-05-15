@@ -89,7 +89,7 @@ MAX_SEARCH_LIMIT=20
 docker network ls | grep pansou
 
 # 应该看到类似输出:
-# xxxxxxxxxxxx   panso_pansou-network   bridge    local
+# xxxxxxxxxxxx   pansou_pansou-network   bridge    local
 ```
 
 如果网络名称不同，修改 `docker-compose.yml` 中的 `name` 字段：
