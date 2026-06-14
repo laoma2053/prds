@@ -142,17 +142,16 @@ class BaiduProvider(BaseProvider):
                 shareid = page_info["shareid"]
                 uk = page_info["uk"]
                 share_bdstoken = page_info["bdstoken"]
-                logger.info(f"📎 shareid={shareid}, uk={uk}, share_bdstoken={'有' if share_bdstoken else '无'}")
+                fsids = page_info["fsids"]
+                file_name = page_info["file_name"]
+                logger.info(f"📎 shareid={shareid}, fsids数量={len(fsids)}, file={file_name}")
 
-                # 4. 获取分享文件列表（用 share_bdstoken 和 dir 参数）
-                fsids, file_name = await self._list_shared_files(client, headers, shareid, uk, share_bdstoken)
                 if not fsids:
-                    return SaveResult(success=False, error="获取分享文件列表失败")
-                logger.info(f"📂 file={file_name}, fsids={fsids[:3]}")
+                    return SaveResult(success=False, error="分享页未找到文件，链接可能已失效或需要提取码")
 
-                # 5. 转存（用 share_bdstoken，正确 Headers）
+                # 5. 转存（bdstoken 用用户自己的，对齐 PHP 参考实现）
                 await self._ensure_dir(client, headers, user_bdstoken, save_folder_id)
-                ok = await self._transfer(client, cookie, shareid, uk, fsids, save_folder_id, share_bdstoken, bare_url)
+                ok = await self._transfer(client, cookie, shareid, uk, fsids, save_folder_id, user_bdstoken, bare_url)
                 if not ok:
                     return SaveResult(success=False, error="转存失败，可能超出空间或频率限制")
 
@@ -263,11 +262,12 @@ class BaiduProvider(BaseProvider):
 
     async def _parse_share_page(self, client: httpx.AsyncClient, cookie: str,
                                  bare_url: str) -> dict | None:
-        """GET 分享页，解析 yunData.setData / locals.mset JSON"""
+        """GET 分享页，解析 yunData.setData / locals.mset JSON（baidupcs-py 同款）
+        同时提取 shareid / uk / bdstoken / fsids / file_name，无需额外 API 调用
+        """
         resp = await client.get(bare_url, headers=_page_headers(cookie))
         html = resp.text
 
-        # baidupcs-py 解析 yunData.setData({...}) 或 locals.mset({...})
         page_data: dict = {}
         for pattern in [r'yunData\.setData\((\{.+?\})\)', r'locals\.mset\((\{.+?\})\)']:
             m = re.search(pattern, html, re.DOTALL)
@@ -278,11 +278,11 @@ class BaiduProvider(BaseProvider):
                 except json.JSONDecodeError:
                     pass
 
-        # 降级：直接 regex 提取（PHP parseResponse 风格）
         shareid = str(page_data.get("shareid", "") or "")
         uk = str(page_data.get("uk", "") or "")
         bdstoken = str(page_data.get("bdstoken", "") or "")
 
+        # 降级：regex（PHP parseResponse 风格）
         if not shareid:
             m = re.search(r'"shareid"\s*:\s*"?(\d+)', html)
             shareid = m.group(1) if m else ""
@@ -298,8 +298,20 @@ class BaiduProvider(BaseProvider):
             logger.debug(f"页面片段: {html[:800]}")
             return None
 
-        logger.debug(f"分享页解析: shareid={shareid}, uk={uk}, bdstoken={'有' if bdstoken and bdstoken != 'null' else '无'}")
-        return {"shareid": shareid, "uk": uk, "bdstoken": bdstoken}
+        # 从 yunData JSON 提取文件列表（baidupcs-py: shared_paths 同时返回 fs_id）
+        file_list = page_data.get("file_list") or page_data.get("list") or []
+        fsids = [str(f["fs_id"]) for f in file_list if f.get("fs_id")]
+        file_name = file_list[0].get("server_filename", "") if file_list else ""
+
+        # 降级：regex 提取 fs_id（PHP parseResponse 同款）
+        if not fsids:
+            fsids = re.findall(r'"fs_id"\s*:\s*(\d+)', html)
+            filenames = re.findall(r'"server_filename"\s*:\s*"([^"]+)"', html)
+            file_name = filenames[0] if filenames else ""
+
+        logger.info(f"分享页: shareid={shareid}, uk={uk}, fsids数量={len(fsids)}, file={file_name}")
+        return {"shareid": shareid, "uk": uk, "bdstoken": bdstoken,
+                "fsids": fsids, "file_name": file_name}
 
     async def _list_shared_files(self, client: httpx.AsyncClient, headers: dict,
                                   shareid: str, uk: str, bdstoken: str) -> tuple[list, str]:
@@ -329,6 +341,14 @@ class BaiduProvider(BaseProvider):
 
     async def _ensure_dir(self, client: httpx.AsyncClient, headers: dict,
                           bdstoken: str, path: str) -> None:
+        """确保目录存在（先检查，只在不存在时才创建，对齐 PHP getDirList → createDir 逻辑）"""
+        check = await client.get(
+            f"{BASE_URL}/api/list",
+            params={"dir": path, "page": "1", "num": "1", "web": "1", "bdstoken": bdstoken},
+            headers=headers,
+        )
+        if check.json().get("errno") == 0:
+            return  # 目录已存在，跳过创建
         await client.post(
             f"{BASE_URL}/api/create",
             params={"a": "commit", "bdstoken": bdstoken},
@@ -353,7 +373,7 @@ class BaiduProvider(BaseProvider):
             params={"shareid": shareid, "from": uk,
                     "bdstoken": share_bdstoken if share_bdstoken and share_bdstoken != "null" else "null",
                     "channel": "chunlei", "clienttype": "0", "web": "1", "ondup": "newcopy"},
-            data={"fsidlist": json.dumps([int(f) for f in fsids]), "path": path},
+            data={"fsidlist": "[" + ",".join(fsids) + "]", "path": path},
             headers=headers,
         )
         data = resp.json()

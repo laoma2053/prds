@@ -331,6 +331,7 @@ class ResourceService:
             # 将 link.password 嵌入 URL，确保 Provider 内部能提取到提取码
             share_url = link.url
             pwd = getattr(link, "password", "") or ""
+            logger.info(f"[转存] pan_type={pan_type}, url={link.url[:50]}, password={'***' if pwd else '(空)'}")
             if pwd and "pwd=" not in share_url:
                 sep = "&" if "?" in share_url else "?"
                 share_url = f"{share_url}{sep}pwd={pwd}"
