@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
 
 from app.core.config import get_settings
+from app.services.link_checker import build_orchestrator
 from app.services.pansou_client import PanSouClient
 from app.services.scheduler import AccountScheduler
 from app.providers import get_provider
@@ -54,6 +55,7 @@ class ResourceService:
         self._settings = get_settings()
         self._pansou = PanSouClient()
         self._scheduler = AccountScheduler(redis_client)
+        self._link_checker = build_orchestrator(self._settings.pancheck_url, self._settings.pansou_base_url)
         self._account_repo = PanAccountRepository(db)
         self._asset_repo = ResourceAssetRepository(db)
         self._instance_repo = ResourceInstanceRepository(db)
@@ -119,13 +121,22 @@ class ResourceService:
                     delivered = await self._deliver_links(keyword, ptype, all_links, effective_limit)
                     results.extend(delivered)
                 else:
-                    logger.info(f"📎 [{ptype}] 未配置账号，返回原始链接 (最新{effective_limit}条)")
-                    # 无账号时，直接返回前 N 条原始链接
-                    for link in all_links[:effective_limit]:
+                    logger.info(f"📎 [{ptype}] 未配置账号，逐一检测后返回原始链接 (目标{effective_limit}条)")
+                    direct_count = 0
+                    for link in all_links:
+                        if direct_count >= effective_limit:
+                            break
+                        if self._settings.link_check_enabled:
+                            password = getattr(link, "password", "") or ""
+                            is_valid = await self._link_checker.check(link.url, ptype, password)
+                            if is_valid is False:
+                                logger.info(f"🚫 链接检测失效，跳过: {link.url[:60]}")
+                                continue
                         results.append({
                             "title": link.note or keyword, "pan_type": ptype,
                             "url": link.url, "password": link.password, "mode": "direct",
                         })
+                        direct_count += 1
 
             mode = "proxy" if any(r.get("mode") == "proxy" for r in results) else "direct"
             logger.info(f"✅ 搜索完成: keyword={keyword}, 模式={mode}, 结果数={len(results)}")
@@ -242,6 +253,14 @@ class ResourceService:
                 await self._set_resource_cache(resource_key, result)
                 logger.info(f"📋 DB缓存命中: {existing_asset.title}")
                 return result
+
+        # 链接有效性检测（跳过缓存命中的链接）
+        if self._settings.link_check_enabled:
+            password = getattr(link, "password", "") or ""
+            is_valid = await self._link_checker.check(link.url, pan_type, password)
+            if is_valid is False:
+                logger.info(f"🚫 链接检测失效，跳过: {link.url[:60]}")
+                return None
 
         # L2: 分布式锁 - 防止并发转存同一资源
         lock_key = _RESOURCE_LOCK_KEY.format(resource_key=resource_key)

@@ -60,9 +60,11 @@ echo ""
 echo "=== 部署结果 ==="
 if curl -sf http://localhost:8088/api/v1/health &>/dev/null; then
   SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+  ADMIN_PWD=$(grep "^ADMIN_PASSWORD=" .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]' || echo "见 .env")
   echo "服务正常运行"
   echo "API 地址:    http://${SERVER_IP}:8088"
   echo "管理后台:    http://${SERVER_IP}:8088/admin"
+  echo "管理密码:    ${ADMIN_PWD}"
   echo "查看日志:    docker logs -f prds"
 else
   echo "服务可能未正常启动，请检查日志:"

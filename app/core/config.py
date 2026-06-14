@@ -41,7 +41,11 @@ class Settings(BaseSettings):
     max_search_limit: int = 20  # 前端可请求的最大数量上限
 
     # 管理后台密码
-    admin_password: str = "admin123"
+    admin_password: str = "admin789"
+
+    # 链接检测
+    link_check_enabled: bool = True
+    pancheck_url: str = "http://43.247.134.5:6080"  # 自建 PanCheck 地址
 
     @property
     def database_url(self) -> str:
