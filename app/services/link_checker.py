@@ -6,7 +6,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT = 10
+_TIMEOUT = 5  # 并行环境下单次超时缩短，更快淘汰死链
 
 
 class BaseLinkChecker(ABC):
@@ -62,7 +62,7 @@ class PanSouChecker(BaseLinkChecker):
                 return True
             if state == "bad":
                 return False
-            return None  # locked / uncertain / unsupported
+            return None
         except Exception as e:
             logger.debug(f"PanSouChecker failed: {e}")
             return None
@@ -97,8 +97,19 @@ class LinkCheckOrchestrator:
         self._checkers = checkers
 
     async def check(self, url: str, pan_type: str, password: str = "") -> bool | None:
+        """随机顺序尝试所有检测器（单链接场景）"""
         order = self._checkers[:]
         random.shuffle(order)
+        for checker in order:
+            result = await checker.check(url, pan_type, password)
+            if result is not None:
+                return result
+        return None
+
+    async def check_indexed(self, url: str, pan_type: str, password: str, index: int) -> bool | None:
+        """按 index 轮转分配首选检测器，分散并行请求压力（并行场景）"""
+        n = len(self._checkers)
+        order = [self._checkers[(index + i) % n] for i in range(n)]
         for checker in order:
             result = await checker.check(url, pan_type, password)
             if result is not None:

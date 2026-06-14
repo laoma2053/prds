@@ -70,6 +70,8 @@ async def list_accounts(db: AsyncSession = Depends(get_db)):
             "max_concurrency": a.max_concurrency,
             "health_score": a.health_score,
             "weight": a.weight,
+            "save_folder_id": a.save_folder_id,
+            "cookie": a.cookie,
             "created_at": a.created_at.isoformat() if a.created_at else None,
         }
         for a in accounts
@@ -123,6 +125,35 @@ async def delete_account(account_id: int, db: AsyncSession = Depends(get_db)):
 
     await db.delete(account)
     return ok(data={"message": "账号删除成功"})
+
+
+@router.post("/folders", dependencies=[Depends(require_admin)])
+async def list_folders_by_cookie(body: dict):
+    """根据 pan_type + cookie 获取文件夹列表（用于新建账号时选择目录）"""
+    from app.providers import get_provider
+    pan_type = body.get("pan_type", "")
+    cookie = body.get("cookie", "")
+    if not pan_type or not cookie:
+        return fail("INVALID_PARAMS", "pan_type 和 cookie 不能为空")
+    provider = get_provider(pan_type)
+    if not provider:
+        return fail("UNSUPPORTED", f"不支持的网盘类型: {pan_type}")
+    folders = await provider.list_folders(cookie)
+    return ok(data=folders)
+
+
+@router.get("/accounts/{account_id}/folders", dependencies=[Depends(require_admin)])
+async def list_folders_by_account(account_id: int, db: AsyncSession = Depends(get_db)):
+    """使用已保存账号的 cookie 获取文件夹列表（用于编辑账号时选择目录）"""
+    from app.providers import get_provider
+    account = await db.get(PanAccount, account_id)
+    if not account:
+        return fail("NOT_FOUND", "账号不存在")
+    provider = get_provider(account.pan_type)
+    if not provider:
+        return fail("UNSUPPORTED", f"不支持的网盘类型: {account.pan_type}")
+    folders = await provider.list_folders(account.cookie)
+    return ok(data=folders)
 
 
 # ── 数据统计（需鉴权）────────────────────────────────

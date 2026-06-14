@@ -70,3 +70,7 @@ class BaseProvider(ABC):
     async def delete_resource(self, file_id: str, cookie: str) -> DeleteResult:
         """删除网盘中的文件"""
         ...
+
+    async def list_folders(self, cookie: str, parent_id: str = "0") -> list[dict]:
+        """列出网盘文件夹，返回 [{"id": str, "name": str}]。子类可选实现。"""
+        return []

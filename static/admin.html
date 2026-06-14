@@ -282,14 +282,15 @@
         <select x-model="form.pan_type"
           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white">
           <option value="quark">夸克网盘</option>
+          <option value="uc">UC网盘</option>
           <option value="baidu">百度网盘</option>
-          <option value="aliyun">阿里云盘</option>
         </select>
       </div>
       <!-- Cookie -->
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1">Cookie</label>
-        <textarea x-model="form.cookie" rows="3" placeholder="从浏览器开发者工具中复制"
+        <textarea x-model="form.cookie" rows="3"
+          :placeholder="{quark:'夸克网盘完整 Cookie', uc:'UC网盘完整 Cookie', baidu:'百度网盘完整 Cookie（需含 BDUSS、STOKEN 等）', xunlei:'迅雷网盘 refresh_token'}[form.pan_type] || '登录凭证'"
           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"></textarea>
       </div>
       <!-- 并发 + 权重 -->
@@ -307,8 +308,21 @@
       </div>
       <!-- 转存文件夹 -->
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1">转存文件夹ID</label>
-        <input x-model="form.save_folder_id" type="text" placeholder="0 表示根目录"
+        <div class="flex items-center justify-between mb-1">
+          <label class="text-sm font-medium text-slate-700">转存文件夹</label>
+          <button type="button" @click="loadFolders()" :disabled="foldersLoading"
+            class="text-xs text-primary-600 hover:text-primary-700 disabled:opacity-40 transition-colors">
+            <span x-text="foldersLoading ? '获取中...' : '获取文件夹列表'"></span>
+          </button>
+        </div>
+        <select x-show="folders.length > 0" x-model="form.save_folder_id"
+          class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white">
+          <template x-for="f in folders" :key="f.id">
+            <option :value="f.id" x-text="f.name"></option>
+          </template>
+        </select>
+        <input x-show="folders.length === 0" x-model="form.save_folder_id" type="text"
+          :placeholder="form.pan_type === 'baidu' ? '目录路径，如 /来自搜索站' : '目录 fid / id，0 表示根目录'"
           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
       </div>
       <!-- 启用 -->
@@ -367,6 +381,8 @@ function app() {
     showModal: false,
     editingAccount: null,
     form: {},
+    folders: [],
+    foldersLoading: false,
 
     // Toast
     toast: { show: false, msg: '', type: 'success' },
@@ -463,13 +479,15 @@ function app() {
 
     openAccountModal(acc = null) {
       this.editingAccount = acc;
+      this.folders = [];
+      this.foldersLoading = false;
       this.form = acc ? {
         name: acc.name,
         pan_type: acc.pan_type,
-        cookie: '', // 编辑时不回显 cookie
+        cookie: acc.cookie || '',
         max_concurrency: acc.max_concurrency,
         weight: acc.weight,
-        save_folder_id: '',
+        save_folder_id: acc.save_folder_id || '',
         is_active: acc.is_active,
       } : {
         name: '',
@@ -481,6 +499,37 @@ function app() {
         is_active: true,
       };
       this.showModal = true;
+    },
+
+    async loadFolders() {
+      const pan_type = this.form.pan_type;
+      if (!pan_type) return;
+      this.foldersLoading = true;
+      this.folders = [];
+      try {
+        let res;
+        if (this.editingAccount && !this.form.cookie) {
+          res = await this.authFetch(`${API}/admin/accounts/${this.editingAccount.id}/folders`);
+        } else {
+          if (!this.form.cookie) { this.showToast('请先填写 Cookie', 'error'); return; }
+          res = await this.authFetch(`${API}/admin/folders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pan_type, cookie: this.form.cookie }),
+          });
+        }
+        const json = await res.json();
+        if (json.success && json.data.length > 0) {
+          this.folders = json.data;
+          if (!this.form.save_folder_id) this.form.save_folder_id = json.data[0].id;
+        } else {
+          this.showToast(json.data?.length === 0 ? '未找到文件夹' : (json.message || '获取失败'), 'error');
+        }
+      } catch (e) {
+        if (e.message !== 'unauthorized') this.showToast('获取文件夹列表失败', 'error');
+      } finally {
+        this.foldersLoading = false;
+      }
     },
 
     async saveAccount() {

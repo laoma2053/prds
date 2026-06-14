@@ -8,6 +8,9 @@ git pull 2>/dev/null || echo "非 git 仓库，跳过 git pull，请手动上传
 # 重新构建并启动
 docker compose up -d --build
 
+# 清理构建产生的悬空镜像（无标签的旧镜像），释放磁盘空间
+docker image prune -f
+
 # 等待服务就绪
 echo "等待服务启动..."
 for i in $(seq 1 30); do

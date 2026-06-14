@@ -2,10 +2,13 @@
 
 from app.providers.base import BaseProvider
 from app.providers.quark import QuarkProvider
+from app.providers.uc import UcProvider
+from app.providers.baidu import BaiduProvider
 
-# 已注册的 Provider（后续新增 BaiduProvider / AliyunProvider 时在此注册）
 _REGISTRY: dict[str, BaseProvider] = {
     "quark": QuarkProvider(),
+    "uc": UcProvider(),
+    "baidu": BaiduProvider(),
 }
 
 
