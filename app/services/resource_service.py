@@ -328,7 +328,14 @@ class ResourceService:
             return None
 
         try:
-            save_result = await provider.save_share(link.url, account.cookie, account.save_folder_id)
+            # 将 link.password 嵌入 URL，确保 Provider 内部能提取到提取码
+            share_url = link.url
+            pwd = getattr(link, "password", "") or ""
+            if pwd and "pwd=" not in share_url:
+                sep = "&" if "?" in share_url else "?"
+                share_url = f"{share_url}{sep}pwd={pwd}"
+
+            save_result = await provider.save_share(share_url, account.cookie, account.save_folder_id)
             if not save_result.success:
                 logger.warning(f"❌ 转存失败: {save_result.error}")
                 return None  # 转存失败，返回 None

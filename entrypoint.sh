@@ -52,7 +52,9 @@ echo "📋 执行数据库迁移..."
 cd /app
 # 如果没有迁移文件，先自动生成
 if [ -z "$(ls -A /app/migrations/versions/*.py 2>/dev/null)" ]; then
-    echo "📝 首次部署，自动生成迁移文件..."
+    echo "📝 首次部署，生成初始迁移文件..."
+    # 先清除可能残留的悬空 revision，避免 autogenerate 失败
+    alembic stamp head 2>/dev/null || true
     alembic revision --autogenerate -m "auto_init" 2>/dev/null || echo "⚠️ 迁移文件生成失败"
 fi
 # 执行迁移（已执行过的会自动跳过）
